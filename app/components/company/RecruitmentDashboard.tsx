@@ -1,0 +1,760 @@
+"use client";
+
+import { useState, useMemo, useEffect } from "react";
+import Link from "next/link";
+import {
+  scheduleRecruitmentMeeting,
+  listMyCompanyMeetings,
+  type RecruitmentMeeting,
+} from "@/app/lib/api";
+
+interface Developer {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  mainSpecialty: string;
+  skillTags: string[];
+  totalChallenges: number;
+  totalWins: number;
+  winRate: number;
+  avgScore: number;
+  avatarUrl?: string;
+}
+
+const SPECIALTIES = ["FRONTEND", "BACKEND", "FULLSTACK", "MOBILE", "DATA", "DEVOPS", "DESIGN", "CYBERSECURITY", "BI"];
+
+const SPECIALTY_GRADIENT: Record<string, string> = {
+  FRONTEND: "from-cyan-500/30 to-blue-500/20",
+  BACKEND: "from-violet-500/30 to-indigo-500/20",
+  FULLSTACK: "from-emerald-500/30 to-teal-500/20",
+  MOBILE: "from-pink-500/30 to-rose-500/20",
+  DATA: "from-amber-500/30 to-orange-500/20",
+  DEVOPS: "from-sky-500/30 to-cyan-500/20",
+  DESIGN: "from-fuchsia-500/30 to-purple-500/20",
+  CYBERSECURITY: "from-red-500/30 to-rose-500/20",
+  BI: "from-yellow-500/30 to-amber-500/20",
+};
+
+type RecruitmentView = "TALENTS" | "MEETINGS";
+
+export default function RecruitmentDashboard() {
+  const [view, setView] = useState<RecruitmentView>("TALENTS");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [specialtyFilter, setSpecialtyFilter] = useState<string>("");
+  const [sortBy, setSortBy] = useState<"avgScore" | "totalWins" | "winRate">("avgScore");
+  const [selectedDeveloper, setSelectedDeveloper] = useState<Developer | null>(null);
+  const [developers, setDevelopers] = useState<Developer[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Meetings tab data
+  const [meetings, setMeetings] = useState<RecruitmentMeeting[]>([]);
+  const [meetingsLoading, setMeetingsLoading] = useState(false);
+  const [meetingsError, setMeetingsError] = useState<string | null>(null);
+
+  // Schedule meeting modal
+  const [scheduleFor, setScheduleFor] = useState<Developer | null>(null);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleDuration, setScheduleDuration] = useState(30);
+  const [positionTitle, setPositionTitle] = useState("");
+  const [requirements, setRequirements] = useState("");
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [scheduleResult, setScheduleResult] = useState<{
+    id: string;
+    meetingLink: string;
+    positionTitle?: string | null;
+    candidate: { email: string; firstName: string; lastName: string };
+    scheduledFor: string;
+  } | null>(null);
+
+  // ──────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const fetchDevelopers = async () => {
+      try {
+        setLoading(true);
+        const params = new URLSearchParams();
+        if (specialtyFilter) params.append("specialty", specialtyFilter);
+        const response = await fetch(`/api/analytics/developers?${params}`);
+        if (!response.ok) throw new Error("Erreur lors du chargement");
+        const data = await response.json();
+        setDevelopers(data.developers || []);
+      } catch (err) {
+        console.error("Erreur:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDevelopers();
+  }, [specialtyFilter]);
+
+  const loadMeetings = async () => {
+    setMeetingsLoading(true);
+    setMeetingsError(null);
+    try {
+      const data = await listMyCompanyMeetings();
+      setMeetings(data);
+    } catch (err: any) {
+      setMeetingsError(err?.message ?? "Erreur de chargement");
+    } finally {
+      setMeetingsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (view === "MEETINGS") loadMeetings();
+  }, [view]);
+
+  const mockDevelopers: Developer[] = useMemo(() => [
+    { id: "1", firstName: "Ahmed", lastName: "Mohammed", email: "ahmed@example.com", mainSpecialty: "FULLSTACK", skillTags: ["React", "Node.js", "PostgreSQL", "Docker"], totalChallenges: 45, totalWins: 32, winRate: 71, avgScore: 8.7, avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Ahmed" },
+    { id: "2", firstName: "Fatima", lastName: "Al-Zahra", email: "fatima@example.com", mainSpecialty: "FRONTEND", skillTags: ["Vue.js", "Tailwind CSS", "TypeScript", "Figma"], totalChallenges: 38, totalWins: 28, winRate: 74, avgScore: 8.4, avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Fatima" },
+    { id: "3", firstName: "Mohammed", lastName: "Hassan", email: "mohammed@example.com", mainSpecialty: "BACKEND", skillTags: ["Python", "FastAPI", "MongoDB", "AWS"], totalChallenges: 52, totalWins: 38, winRate: 73, avgScore: 8.9, avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Mohammed" },
+    { id: "4", firstName: "Sara", lastName: "Ibrahim", email: "sara@example.com", mainSpecialty: "DATA", skillTags: ["Python", "TensorFlow", "SQL", "Tableau"], totalChallenges: 33, totalWins: 22, winRate: 67, avgScore: 8.1, avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Sara" },
+    { id: "5", firstName: "Karim", lastName: "Khaled", email: "karim@example.com", mainSpecialty: "DEVOPS", skillTags: ["Kubernetes", "CI/CD", "Linux", "Terraform"], totalChallenges: 28, totalWins: 21, winRate: 75, avgScore: 8.6, avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Karim" },
+  ], []);
+
+  const isUsingMock = developers.length === 0;
+  const displayDevelopers = isUsingMock ? mockDevelopers : developers;
+  const isValidObjectId = (s: string) => /^[a-f0-9]{24}$/i.test(s);
+
+  const filteredDevelopers = useMemo(() => {
+    return displayDevelopers
+      .filter((d) => {
+        const matchSearch = `${d.firstName} ${d.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          d.email.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchSpecialty = !specialtyFilter || d.mainSpecialty === specialtyFilter;
+        return matchSearch && matchSpecialty;
+      })
+      .sort((a, b) => {
+        if (sortBy === "avgScore") return b.avgScore - a.avgScore;
+        if (sortBy === "totalWins") return b.totalWins - a.totalWins;
+        return b.winRate - a.winRate;
+      });
+  }, [displayDevelopers, searchTerm, specialtyFilter, sortBy]);
+
+  const stats = useMemo(() => ({
+    totalDevelopers: displayDevelopers.length,
+    avgScore: displayDevelopers.length
+      ? (displayDevelopers.reduce((sum, d) => sum + d.avgScore, 0) / displayDevelopers.length).toFixed(1)
+      : "—",
+    topSpecialty: displayDevelopers[0]?.mainSpecialty ?? "—",
+    topWinRate: displayDevelopers.length ? Math.max(...displayDevelopers.map((d) => d.winRate)) : 0,
+  }), [displayDevelopers]);
+
+  // ─── Modal handlers ───
+
+  const openScheduleModal = (dev: Developer) => {
+    if (!isValidObjectId(dev.id)) {
+      alert(
+        "Ce profil est une donnée de démo (id non valide). Connecte de vrais utilisateurs depuis l'API analytics pour pouvoir planifier un meeting.",
+      );
+      return;
+    }
+    setScheduleFor(dev);
+    setSelectedDeveloper(null);
+    // Default: tomorrow at 10:00 local
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    t.setHours(10, 0, 0, 0);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    setScheduleDate(`${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`);
+    setScheduleDuration(30);
+    setPositionTitle("");
+    setRequirements("");
+    setScheduleError(null);
+    setScheduleResult(null);
+  };
+
+  const closeScheduleModal = () => {
+    if (scheduling) return;
+    setScheduleFor(null);
+    setScheduleError(null);
+    setScheduleResult(null);
+  };
+
+  const handleSchedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!scheduleFor) return;
+    setScheduling(true);
+    setScheduleError(null);
+    try {
+      const iso = new Date(scheduleDate).toISOString();
+      const res = await scheduleRecruitmentMeeting({
+        candidateUserId: scheduleFor.id,
+        scheduledFor: iso,
+        positionTitle: positionTitle.trim(),
+        durationMinutes: scheduleDuration,
+        requirements: requirements.trim() || undefined,
+      });
+      setScheduleResult({
+        id: res.id,
+        meetingLink: res.meetingLink,
+        positionTitle: res.positionTitle,
+        candidate: res.candidate,
+        scheduledFor: res.scheduledFor,
+      });
+    } catch (err: any) {
+      setScheduleError(err?.message ?? "Échec de la planification");
+    } finally {
+      setScheduling(false);
+    }
+  };
+
+  // ──────────────────────────────────────────────────────────────
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div className="flex items-start gap-4">
+          <div className="shrink-0 w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+            <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-black tracking-[0.3em] text-cyan-400 uppercase">Recrutement</p>
+            <h2 className="mt-1 text-2xl md:text-3xl font-black italic uppercase tracking-tight text-white leading-tight">
+              Talent Pool
+            </h2>
+            <p className="mt-1 text-sm text-white/40">Découvre les top performers et planifie des entretiens.</p>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-2 bg-white/5 border border-white/10 rounded-xl p-1">
+          <button
+            onClick={() => setView("TALENTS")}
+            className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+              view === "TALENTS" ? "bg-cyan-500 text-black shadow-lg shadow-cyan-500/20" : "text-white/50 hover:text-white"
+            }`}
+          >
+            Talents
+          </button>
+          <button
+            onClick={() => setView("MEETINGS")}
+            className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+              view === "MEETINGS" ? "bg-cyan-500 text-black shadow-lg shadow-cyan-500/20" : "text-white/50 hover:text-white"
+            }`}
+          >
+            Mes Meetings
+          </button>
+        </div>
+      </div>
+
+      {view === "TALENTS" && (
+        <>
+          {isUsingMock && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 backdrop-blur-xl px-5 py-4 flex items-start gap-3">
+              <svg className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-black tracking-[0.3em] text-amber-400 uppercase">Mode démo</p>
+                <p className="text-sm text-white/70 mt-1 leading-relaxed">
+                  L'API <span className="font-mono text-amber-300">/api/analytics/developers</span> n'a renvoyé aucun talent — les profils ci-dessous sont des exemples.
+                  La planification de meeting est désactivée tant qu'il n'y a pas de vrais utilisateurs.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* KPIs */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Metric label="Total Talents" value={stats.totalDevelopers} accent="cyan" />
+            <Metric label="Score moyen" value={`${stats.avgScore} / 10`} accent="emerald" />
+            <Metric label="Top spécialité" value={stats.topSpecialty} accent="violet" />
+            <Metric label="Best win rate" value={`${stats.topWinRate}%`} accent="amber" />
+          </div>
+
+          {/* Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="md:col-span-2 relative">
+              <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Chercher par nom ou email..."
+                className="w-full bg-white/5 border border-white/10 focus:border-cyan-500/50 pl-11 pr-4 py-3 rounded-xl text-sm font-mono text-white outline-none placeholder:text-white/20 transition-all"
+              />
+            </div>
+            <select
+              value={specialtyFilter}
+              onChange={(e) => setSpecialtyFilter(e.target.value)}
+              className="bg-white/5 border border-white/10 px-4 py-3 rounded-xl text-sm text-white outline-none focus:border-cyan-500/50"
+            >
+              <option value="">Toutes spécialités</option>
+              {SPECIALTIES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="bg-white/5 border border-white/10 px-4 py-3 rounded-xl text-sm text-white outline-none focus:border-cyan-500/50"
+            >
+              <option value="avgScore">Tri: Score</option>
+              <option value="totalWins">Tri: Victoires</option>
+              <option value="winRate">Tri: Taux</option>
+            </select>
+          </div>
+
+          {/* Developers grid */}
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="w-10 h-10 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
+              <p className="text-[10px] font-black tracking-[0.3em] text-white/40 uppercase">Chargement…</p>
+            </div>
+          ) : filteredDevelopers.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-10 text-center">
+              <p className="text-white/60 font-black italic uppercase tracking-tight">Aucun talent ne correspond</p>
+              <button
+                onClick={() => { setSearchTerm(""); setSpecialtyFilter(""); }}
+                className="mt-4 inline-block px-5 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-[10px] font-black uppercase tracking-widest text-cyan-300 hover:bg-cyan-500/20"
+              >
+                Réinitialiser les filtres
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredDevelopers.map((dev) => (
+                <DeveloperCard
+                  key={dev.id}
+                  dev={dev}
+                  onView={() => setSelectedDeveloper(dev)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {view === "MEETINGS" && (
+        <div className="space-y-4">
+          {meetingsLoading ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="w-10 h-10 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
+              <p className="text-[10px] font-black tracking-[0.3em] text-white/40 uppercase">Chargement…</p>
+            </div>
+          ) : meetingsError ? (
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-6 text-center text-red-300 text-sm font-mono">
+              {meetingsError}
+            </div>
+          ) : meetings.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-10 text-center">
+              <p className="text-white/60 font-black italic uppercase tracking-tight">Aucun meeting planifié</p>
+              <p className="text-[10px] text-white/30 mt-2 uppercase tracking-widest">Va dans l'onglet Talents et clique sur Start Meeting.</p>
+            </div>
+          ) : (
+            <ul className="space-y-3">
+              {meetings.map((m) => (
+                <li key={m.id} className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-5 grid grid-cols-1 md:grid-cols-12 gap-3 items-center hover:border-cyan-500/20 transition-all">
+                  <div className="md:col-span-4 min-w-0">
+                    <p className="text-[9px] font-black text-white/30 uppercase tracking-widest">Candidat</p>
+                    <p className="text-sm font-black italic uppercase text-white truncate">{m.candidateName}</p>
+                    {m.positionTitle && (
+                      <p className="text-[10px] font-black text-cyan-400/80 truncate mt-0.5">{m.positionTitle}</p>
+                    )}
+                    <p className="text-[10px] font-mono text-white/40 truncate">{m.candidateEmail}</p>
+                  </div>
+                  <div className="md:col-span-3">
+                    <p className="text-[9px] font-black text-white/30 uppercase tracking-widest">Programmé</p>
+                    <p className="text-sm font-mono text-cyan-300">{new Date(m.scheduledFor).toLocaleString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-[9px] font-black text-white/30 uppercase tracking-widest">Durée</p>
+                    <p className="text-sm font-mono text-white/60">{m.durationMinutes} min</p>
+                  </div>
+                  <div className="md:col-span-1">
+                    <span className={`inline-block px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest border ${
+                      m.status === "SCHEDULED" ? "bg-cyan-500/10 text-cyan-300 border-cyan-500/30" :
+                      m.status === "STARTED" ? "bg-amber-500/10 text-amber-300 border-amber-500/30" :
+                      m.status === "COMPLETED" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" :
+                      "bg-red-500/10 text-red-300 border-red-500/30"
+                    }`}>
+                      {m.status}
+                    </span>
+                  </div>
+                  <div className="md:col-span-2 flex justify-end">
+                    <Link
+                      href={`/meeting/${m.id}`}
+                      className="px-4 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-[10px] font-black uppercase tracking-widest transition-all"
+                    >
+                      Ouvrir →
+                    </Link>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* ─── Profile detail modal (overlay) ─── */}
+      {selectedDeveloper && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[90] flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedDeveloper(null); }}
+        >
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" aria-hidden />
+          <div className="relative w-full max-w-2xl rounded-3xl border border-cyan-500/20 bg-[#0a0f1a]/95 backdrop-blur-3xl shadow-[0_0_80px_-20px_rgba(0,212,255,0.4)] overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-200">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent" aria-hidden />
+            <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-cyan-500/10 blur-[100px] pointer-events-none" aria-hidden />
+
+            <div className="relative p-7 space-y-5">
+              <div className="flex justify-between items-start gap-4">
+                <div className="flex items-center gap-4 min-w-0">
+                  <img src={selectedDeveloper.avatarUrl} alt="" className={`w-14 h-14 rounded-2xl border-2 border-cyan-500/30 bg-gradient-to-br ${SPECIALTY_GRADIENT[selectedDeveloper.mainSpecialty] || "from-cyan-500/30 to-blue-500/20"} shrink-0`} />
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black tracking-[0.3em] text-cyan-400 uppercase">Profil</p>
+                    <h3 className="text-xl font-black italic uppercase text-white truncate">{selectedDeveloper.firstName} {selectedDeveloper.lastName}</h3>
+                    <p className="text-[11px] text-white/40 font-mono truncate">{selectedDeveloper.email}</p>
+                    <span className="inline-block mt-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-cyan-500/15 text-cyan-300 border border-cyan-500/20">
+                      {selectedDeveloper.mainSpecialty}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedDeveloper(null)}
+                  className="shrink-0 w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/40 hover:text-white transition-all"
+                >✕</button>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {[
+                  { label: "Score", value: selectedDeveloper.avgScore.toFixed(1), unit: "/10" },
+                  { label: "Challenges", value: selectedDeveloper.totalChallenges, unit: "" },
+                  { label: "Victoires", value: selectedDeveloper.totalWins, unit: "" },
+                  { label: "Win Rate", value: selectedDeveloper.winRate, unit: "%" },
+                ].map((s) => (
+                  <div key={s.label} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-center">
+                    <p className="text-2xl font-black italic text-white">{s.value}<span className="text-sm text-white/40">{s.unit}</span></p>
+                    <p className="text-[9px] font-black text-white/30 uppercase tracking-widest mt-0.5">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Tech Stack</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedDeveloper.skillTags.map((skill) => (
+                    <span key={skill} className="px-2.5 py-1 rounded-md bg-cyan-500/10 border border-cyan-500/20 text-[10px] font-black uppercase tracking-widest text-cyan-300">
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => openScheduleModal(selectedDeveloper)}
+                  disabled={!isValidObjectId(selectedDeveloper.id)}
+                  title={isValidObjectId(selectedDeveloper.id) ? "Planifier un meeting" : "Profil de démo — id non valide"}
+                  className="flex-1 inline-flex items-center justify-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-black py-3 rounded-xl text-[11px] font-black uppercase tracking-[0.2em] transition-all shadow-xl shadow-cyan-500/20 disabled:bg-cyan-500/20 disabled:text-cyan-300/40 disabled:shadow-none disabled:cursor-not-allowed"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  Start Meeting
+                </button>
+                <button className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-black uppercase tracking-[0.2em] text-white/60 hover:text-white transition-all">
+                  Recruter
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Schedule Meeting Modal ─── */}
+      {scheduleFor && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) closeScheduleModal(); }}
+        >
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" aria-hidden />
+          <div className="relative w-full max-w-lg rounded-3xl border border-cyan-500/20 bg-[#0a0f1a]/95 backdrop-blur-3xl shadow-[0_0_80px_-20px_rgba(0,212,255,0.4)] overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-200">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent" aria-hidden />
+            <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-cyan-500/10 blur-[100px] pointer-events-none" aria-hidden />
+
+            <div className="relative p-7 space-y-5">
+              <div className="flex items-start gap-4">
+                <div className="shrink-0 w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black tracking-[0.3em] text-cyan-400 uppercase">Planifier un meeting</p>
+                  <h3 className="text-xl font-black italic uppercase text-white truncate">
+                    avec {scheduleFor.firstName} {scheduleFor.lastName}
+                  </h3>
+                  <p className="text-[11px] text-white/40 font-mono mt-1 break-all">{scheduleFor.email}</p>
+                </div>
+              </div>
+
+              {scheduleResult ? (
+                /* ── Success state ── */
+                <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                  {/* Confetti-style header */}
+                  <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-lg">🎯</div>
+                      <div>
+                        <p className="text-[10px] font-black tracking-[0.3em] text-emerald-400 uppercase">Invitation envoyée</p>
+                        <p className="text-sm font-black italic uppercase text-white">
+                          {scheduleResult.positionTitle ?? "Interview planifié"}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-white/70 leading-relaxed">
+                      <span className="font-black text-white">{scheduleResult.candidate.firstName} {scheduleResult.candidate.lastName}</span> a reçu :
+                    </p>
+                    <ul className="space-y-1 text-[11px] text-white/50">
+                      <li className="flex items-center gap-2"><span className="text-emerald-400">✓</span> Un email personnalisé avec les détails du poste</li>
+                      <li className="flex items-center gap-2"><span className="text-emerald-400">✓</span> Une notification in-app "Tu as été sélectionné(e)"</li>
+                      <li className="flex items-center gap-2"><span className="text-emerald-400">✓</span> Le lien direct vers la salle d'entretien</li>
+                    </ul>
+                    <div className="rounded-lg bg-black/40 border border-white/10 p-3">
+                      <p className="text-[9px] font-black text-white/30 uppercase tracking-widest mb-1">Lien meeting</p>
+                      <a href={scheduleResult.meetingLink} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-cyan-400 break-all hover:text-cyan-300">
+                        {scheduleResult.meetingLink}
+                      </a>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={closeScheduleModal} className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-black uppercase tracking-[0.2em] text-white/60 hover:text-white transition-all">
+                      Fermer
+                    </button>
+                    <Link
+                      href={`/meeting/${scheduleResult.id}`}
+                      className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-[11px] font-black uppercase tracking-[0.2em] transition-all shadow-xl shadow-cyan-500/30"
+                    >
+                      Ouvrir la salle →
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                /* ── Schedule form ── */
+                <form onSubmit={handleSchedule} className="space-y-4">
+
+                  {/* Candidate skill preview */}
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 flex items-center gap-3">
+                    <img
+                      src={scheduleFor.avatarUrl}
+                      alt=""
+                      className={`w-9 h-9 rounded-lg border border-cyan-500/20 bg-gradient-to-br ${SPECIALTY_GRADIENT[scheduleFor.mainSpecialty] || "from-cyan-500/30 to-blue-500/20"} shrink-0`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-black italic uppercase text-white truncate">{scheduleFor.firstName} {scheduleFor.lastName}</p>
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        <span className="text-[9px] bg-cyan-500/15 text-cyan-300 px-1.5 py-0.5 rounded font-black uppercase tracking-widest">{scheduleFor.mainSpecialty}</span>
+                        {scheduleFor.skillTags.slice(0, 3).map((s) => (
+                          <span key={s} className="text-[9px] bg-white/5 text-white/50 px-1.5 py-0.5 rounded font-mono">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Position title — required */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest ml-0.5">
+                      Poste proposé <span className="text-cyan-400">*</span>
+                    </label>
+                    <input
+                      required
+                      type="text"
+                      maxLength={100}
+                      value={positionTitle}
+                      onChange={(e) => setPositionTitle(e.target.value)}
+                      placeholder="ex: Senior Backend Engineer, Data Scientist…"
+                      className="w-full bg-white/5 border border-white/10 focus:border-cyan-500/50 p-3.5 rounded-xl text-white text-sm outline-none transition-all placeholder:text-white/20"
+                    />
+                  </div>
+
+                  {/* Date & time */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest ml-0.5">
+                      Date et heure <span className="text-cyan-400">*</span>
+                    </label>
+                    <input
+                      required
+                      type="datetime-local"
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 focus:border-cyan-500/50 p-3.5 rounded-xl text-white text-sm outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Duration */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest ml-0.5">Durée</label>
+                    <div className="flex flex-wrap gap-2">
+                      {[15, 30, 45, 60, 90].map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setScheduleDuration(m)}
+                          className={`px-3 py-2 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all ${
+                            scheduleDuration === m
+                              ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
+                              : "bg-white/5 border-white/10 text-white/40 hover:text-cyan-400 hover:border-cyan-500/30"
+                          }`}
+                        >
+                          {m} min
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Requirements — optional */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest ml-0.5">
+                      Ce que vous recherchez <span className="text-white/20">(optionnel)</span>
+                    </label>
+                    <textarea
+                      rows={3}
+                      maxLength={500}
+                      value={requirements}
+                      onChange={(e) => setRequirements(e.target.value)}
+                      placeholder="Compétences clés, expérience souhaitée, contexte du projet…"
+                      className="w-full bg-white/5 border border-white/10 focus:border-cyan-500/50 p-3.5 rounded-xl text-white font-mono text-sm outline-none transition-all resize-none placeholder:text-white/20"
+                    />
+                    <p className="text-[9px] text-white/20 ml-0.5">Ces informations seront intégrées dans une description professionnelle personnalisée envoyée au candidat.</p>
+                  </div>
+
+                  {scheduleError && (
+                    <div className="rounded-xl bg-red-500/10 border border-red-500/30 px-4 py-3 text-xs font-black uppercase tracking-widest text-red-400">
+                      ✕ {scheduleError}
+                    </div>
+                  )}
+
+                  {/* What will be sent — info */}
+                  <div className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 space-y-1">
+                    <p className="text-[9px] font-black text-white/30 uppercase tracking-widest">Ce qui sera envoyé à {scheduleFor.firstName}</p>
+                    <ul className="space-y-0.5">
+                      {[
+                        "Email personnalisé avec profil de votre company",
+                        "Notification in-app « Tu as été sélectionné(e) »",
+                        "Description du poste générée automatiquement",
+                        "Lien direct vers la salle d'entretien",
+                      ].map((item) => (
+                        <li key={item} className="flex items-center gap-1.5 text-[10px] text-white/40">
+                          <svg className="w-3 h-3 text-cyan-500/60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/></svg>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="flex gap-3 pt-1">
+                    <button type="button" onClick={closeScheduleModal} disabled={scheduling} className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-black uppercase tracking-[0.2em] text-white/60 hover:text-white transition-all disabled:opacity-50">
+                      Annuler
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={scheduling || !scheduleDate || !positionTitle.trim()}
+                      className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-[11px] font-black uppercase tracking-[0.2em] transition-all shadow-xl shadow-cyan-500/30 disabled:bg-cyan-500/20 disabled:text-cyan-300/40 disabled:shadow-none disabled:cursor-not-allowed"
+                    >
+                      {scheduling ? (
+                        <>
+                          <span className="w-3.5 h-3.5 border-2 border-black/40 border-t-transparent rounded-full animate-spin" />
+                          Envoi…
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                          Envoyer l'invitation
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────────
+
+function Metric({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string | number;
+  accent: "cyan" | "emerald" | "violet" | "amber";
+}) {
+  const acc =
+    accent === "cyan" ? { text: "text-cyan-400", bg: "bg-cyan-500/10" } :
+    accent === "emerald" ? { text: "text-emerald-400", bg: "bg-emerald-500/10" } :
+    accent === "violet" ? { text: "text-violet-400", bg: "bg-violet-500/10" } :
+    { text: "text-amber-400", bg: "bg-amber-500/10" };
+  return (
+    <div className="relative p-5 rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl">
+      <div className={`absolute top-0 right-0 w-20 h-20 ${acc.bg} blur-2xl rounded-full -z-10`} />
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 mb-2">{label}</p>
+      <p className="text-3xl font-black italic tracking-tighter text-white">{value}</p>
+      <p className={`mt-1 text-[10px] font-bold uppercase tracking-widest ${acc.text}`}>Live</p>
+    </div>
+  );
+}
+
+function DeveloperCard({ dev, onView }: { dev: Developer; onView: () => void }) {
+  return (
+    <button
+      onClick={onView}
+      className="text-left rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-5 hover:border-cyan-500/30 hover:bg-white/[0.05] transition-all group"
+    >
+      <div className="flex items-start gap-3">
+        <img
+          src={dev.avatarUrl}
+          alt=""
+          className={`w-12 h-12 rounded-xl border-2 border-cyan-500/20 bg-gradient-to-br ${SPECIALTY_GRADIENT[dev.mainSpecialty] || "from-cyan-500/30 to-blue-500/20"} group-hover:scale-105 transition-transform shrink-0`}
+        />
+        <div className="flex-1 min-w-0">
+          <span className="inline-block px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-cyan-500/15 text-cyan-300 border border-cyan-500/20 mb-1.5">
+            {dev.mainSpecialty}
+          </span>
+          <h3 className="text-base font-black italic uppercase text-white truncate">{dev.firstName} {dev.lastName}</h3>
+          <p className="text-[10px] text-white/40 font-mono truncate">{dev.email}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 mt-4">
+        <div className="rounded-lg border border-white/5 bg-black/20 p-2 text-center">
+          <p className="text-xl font-black italic text-cyan-400">{dev.avgScore.toFixed(1)}<span className="text-[10px] text-cyan-400/60">/10</span></p>
+          <p className="text-[8px] font-black text-white/30 uppercase tracking-widest">Score</p>
+        </div>
+        <div className="rounded-lg border border-white/5 bg-black/20 p-2 text-center">
+          <p className="text-xl font-black italic text-white">{dev.totalWins}</p>
+          <p className="text-[8px] font-black text-white/30 uppercase tracking-widest">Wins</p>
+        </div>
+        <div className="rounded-lg border border-white/5 bg-black/20 p-2 text-center">
+          <p className="text-xl font-black italic text-emerald-400">{dev.winRate}<span className="text-[10px] text-emerald-400/60">%</span></p>
+          <p className="text-[8px] font-black text-white/30 uppercase tracking-widest">Rate</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-1 mt-3">
+        {dev.skillTags.slice(0, 3).map((s) => (
+          <span key={s} className="text-[9px] bg-white/5 text-white/60 px-2 py-0.5 rounded-md font-mono border border-white/5">{s}</span>
+        ))}
+        {dev.skillTags.length > 3 && (
+          <span className="text-[9px] bg-cyan-500/10 text-cyan-300 px-2 py-0.5 rounded-md font-black uppercase tracking-widest">+{dev.skillTags.length - 3}</span>
+        )}
+      </div>
+
+      <div className="mt-4 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.2em] text-cyan-400 group-hover:text-cyan-300">
+        Voir profil
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7"/></svg>
+      </div>
+    </button>
+  );
+}
